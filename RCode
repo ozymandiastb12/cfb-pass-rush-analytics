@@ -1,0 +1,140 @@
+# CFB Pass Rush Performance Analysis - Top Performers Labeled
+# Simplified version focusing on main scatter plot with player names
+
+# Install missing packages (run these lines if packages are missing)
+# install.packages(c("tidyverse", "ggrepel", "viridis", "RColorBrewer"))
+
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(ggrepel)
+library(viridis)
+library(RColorBrewer)
+
+# Try to load cfbfastR, but don't fail if it's not available
+if (!require(cfbfastR, quietly = TRUE)) {
+  message("cfbfastR not available - proceeding without it")
+}
+
+# Load and clean the data
+# Use interactive file browser - this will definitely work
+pass_rush_data <- read_csv(file.choose()) %>%
+  mutate(
+    # Create efficiency metrics
+    grade_per_snap = grades_pass_rush_defense / snap_counts_pass_rush,
+    wins_per_snap = pass_rush_win_rate / 100,
+    position_full = case_when(
+      position == "ED" ~ "Edge Defender",
+      position == "DI" ~ "Defensive Interior",
+      TRUE ~ position
+    ),
+    # Create performance tiers
+    performance_tier = case_when(
+      grades_pass_rush_defense >= 80 ~ "Elite",
+      grades_pass_rush_defense >= 70 ~ "Good",
+      grades_pass_rush_defense >= 60 ~ "Average",
+      TRUE ~ "Below Average"
+    ),
+    # Identify top performers for labeling
+    is_top_performer = case_when(
+      grades_pass_rush_defense >= 85 ~ TRUE,  # Top tier by grade
+      grades_pass_rush_defense >= 80 & pass_rush_win_rate >= 15 ~ TRUE,  # High grade + high win rate
+      grades_pass_rush_defense >= 75 & pass_rush_win_rate >= 18 ~ TRUE,  # Very high win rate
+      TRUE ~ FALSE
+    ),
+    # Create player labels for top performers
+    player_label = if_else(is_top_performer, 
+                          paste0(player, "\n(", team_name, ")"), 
+                          "")
+  )
+
+# Define CFB-style color palette
+position_colors <- c("Edge Defender" = "#FF6B35", "Defensive Interior" = "#004E89")
+
+# Custom theme for CFB visualizations
+theme_cfb <- function() {
+  theme_minimal() +
+    theme(
+      text = element_text(color = "#2C3E50"),
+      plot.title = element_text(size = 18, face = "bold", 
+                               hjust = 0.5, color = "#2C3E50"),
+      plot.subtitle = element_text(size = 12, hjust = 0.5, 
+                                  color = "#7F8C8D", margin = margin(0, 0, 20, 0)),
+      plot.caption = element_text(size = 10, color = "#95A5A6"),
+      axis.title = element_text(size = 12, face = "bold"),
+      axis.text = element_text(size = 10),
+      legend.title = element_text(size = 11, face = "bold"),
+      legend.text = element_text(size = 10),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "#ECF0F1", size = 0.5),
+      strip.text = element_text(size = 11, face = "bold"),
+      plot.background = element_rect(fill = "#FAFAFA", color = NA),
+      panel.background = element_rect(fill = "#FFFFFF", color = NA),
+      legend.position = "right"
+    )
+}
+
+# Create the main scatter plot with top performer labels
+performance_plot <- pass_rush_data %>%
+  ggplot(aes(x = pass_rush_win_rate, y = grades_pass_rush_defense)) +
+  geom_point(aes(color = position_full, size = snap_counts_pass_rush), 
+             alpha = 0.7, stroke = 0) +
+  geom_smooth(method = "lm", se = TRUE, color = "#34495E", 
+              fill = "#BDC3C7", alpha = 0.3, linewidth = 1) +
+  geom_text_repel(aes(label = player_label), 
+                  size = 3, 
+                  fontface = "bold",
+                  box.padding = 0.5,
+                  point.padding = 0.3,
+                  max.overlaps = 25,
+                  min.segment.length = 0.2,
+                  segment.color = "#7F8C8D",
+                  segment.size = 0.5,
+                  segment.alpha = 0.6,
+                  color = "#2C3E50") +
+  scale_color_manual(values = position_colors, name = "Position") +
+  scale_size_continuous(name = "Snap Count", range = c(2, 8),
+                       labels = comma_format()) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"), 
+                    breaks = pretty_breaks(n = 8),
+                    limits = c(0, max(pass_rush_data$pass_rush_win_rate) * 1.05)) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8),
+                    limits = c(min(pass_rush_data$grades_pass_rush_defense) * 0.98,
+                              max(pass_rush_data$grades_pass_rush_defense) * 1.02)) +
+  labs(
+    title = "College Football Pass Rush Performance Analysis",
+    subtitle = "Pass Rush Grade vs Win Rate • Top Performers Labeled • Sized by Snap Count",
+    x = "Pass Rush Win Rate (%)",
+    y = "Pass Rush Grade",
+    caption = "Data: PFF College Football | Minimum 300 pass rush snaps\nLabeled: Players with 85+ grade OR (80+ grade & 15+ win rate) OR (75+ grade & 18+ win rate)"
+  ) +
+  theme_cfb() +
+  guides(
+    color = guide_legend(override.aes = list(size = 5, alpha = 1)),
+    size = guide_legend(override.aes = list(alpha = 0.8))
+  )
+
+# Display the plot
+print(performance_plot)
+
+# Print summary of labeled players
+labeled_players <- pass_rush_data %>%
+  filter(is_top_performer) %>%
+  arrange(desc(grades_pass_rush_defense)) %>%
+  select(player, team_name, position_full, grades_pass_rush_defense, 
+         pass_rush_win_rate, snap_counts_pass_rush)
+
+cat("=== Top Performers (Labeled on Plot) ===\n")
+print(labeled_players)
+
+# Optional: Save the plot
+# ggsave("cfb_pass_rush_performance_labeled.png", performance_plot, 
+#        width = 14, height = 10, dpi = 300)
+
+cat("\n=== Plot Complete ===\n")
+cat("Top performers are labeled based on:\n")
+cat("• Grade ≥ 85, OR\n")
+cat("• Grade ≥ 80 AND Win Rate ≥ 15%, OR\n") 
+cat("• Grade ≥ 75 AND Win Rate ≥ 18%\n")
